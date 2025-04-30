@@ -37,19 +37,19 @@ jobs:
       - name: Display Task Inputs
         id: display_inputs
         run: |
-          echo "Received Task ID: ${{ inputs.task_id }}"
-          echo "Task Description: ${{ inputs.task_description }}"
-          echo "Context Data: ${{ inputs.context_data }}"
+          echo "[$(date +%Y-%m-%dT%H:%M:%SZ)] INFO: Received Task ID: ${{ inputs.task_id }}"
+          echo "[$(date +%Y-%m-%dT%H:%M:%SZ)] INFO: Task Description: ${{ inputs.task_description }}"
+          echo "[$(date +%Y-%m-%dT%H:%M:%SZ)] INFO: Context Data: ${{ inputs.context_data }}"
 
       # Example Task: Create a file based on task_id
       - name: Run Task (Create File)
         id: run_task
         run: |
-          echo "Executing task: Create file based on task_id"
+          echo "[$(date +%Y-%m-%dT%H:%M:%SZ)] INFO: Executing task: Create file based on task_id"
           file_name="task_${{ inputs.task_id }}_output.txt"
           echo "This file was generated for task ${{ inputs.task_id }}." > $file_name
           echo "Context provided: ${{ inputs.context_data }}" >> $file_name
-          echo "File $file_name created successfully."
+          echo "[$(date +%Y-%m-%dT%H:%M:%SZ)] SUCCESS: File $file_name created successfully."
           # Set outputs
           result_value="File $file_name created."
           echo "result=$result_value" >> "$GITHUB_OUTPUT"
@@ -63,5 +63,5 @@ jobs:
           path: task_${{ inputs.task_id }}_output.txt
 
       - name: Report Result
-        run: echo "Task Result: ${{ steps.run_task.outputs.result }}"
+        run: echo "[$(date +%Y-%m-%dT%H:%M:%SZ)] INFO: Task Result: ${{ steps.run_task.outputs.result }}"
 
