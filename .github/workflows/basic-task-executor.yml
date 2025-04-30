@@ -20,12 +20,16 @@ on:
       result:
         description: "Output or result of the task execution"
         value: ${{ jobs.execute_task.outputs.task_result }}
+      artifact_name:
+        description: "Name of the artifact created (if any)"
+        value: ${{ jobs.execute_task.outputs.artifact_name }}
 
 jobs:
   execute_task:
     runs-on: ubuntu-latest
     outputs:
       task_result: ${{ steps.run_task.outputs.result }}
+      artifact_name: ${{ steps.run_task.outputs.artifact_name }}
     steps:
       - name: Checkout code (optional, if needed)
         uses: actions/checkout@v4
@@ -37,16 +41,26 @@ jobs:
           echo "Task Description: ${{ inputs.task_description }}"
           echo "Context Data: ${{ inputs.context_data }}"
 
-      # Placeholder for actual task execution logic
-      # This is where the agent-specific logic would eventually go,
-      # potentially using the inputs to perform actions.
-      - name: Run Task (Placeholder)
+      # Example Task: Create a file based on task_id
+      - name: Run Task (Create File)
         id: run_task
         run: |
-          echo "Simulating execution for task ${{ inputs.task_id }}..."
-          # Example: Set an output based on inputs
-          result_value="Task ${{ inputs.task_id }} completed with context: ${{ inputs.context_data }}"
+          echo "Executing task: Create file based on task_id"
+          file_name="task_${{ inputs.task_id }}_output.txt"
+          echo "This file was generated for task ${{ inputs.task_id }}." > $file_name
+          echo "Context provided: ${{ inputs.context_data }}" >> $file_name
+          echo "File $file_name created successfully."
+          # Set outputs
+          result_value="File $file_name created."
           echo "result=$result_value" >> "$GITHUB_OUTPUT"
+          echo "artifact_name=$file_name" >> "$GITHUB_OUTPUT"
+
+      # Optional: Upload the created file as an artifact
+      - name: Upload Task Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: task-output-${{ inputs.task_id }}
+          path: task_${{ inputs.task_id }}_output.txt
 
       - name: Report Result
         run: echo "Task Result: ${{ steps.run_task.outputs.result }}"
