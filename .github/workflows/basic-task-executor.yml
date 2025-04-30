@@ -1,0 +1,53 @@
+# Callable Workflow: Basic Task Executor
+name: Basic Task Executor
+
+on:
+  workflow_call:
+    inputs:
+      task_id:
+        required: true
+        type: string
+        description: "Unique ID for the task being executed"
+      task_description:
+        required: false
+        type: string
+        description: "Brief description of the task"
+      context_data:
+        required: false
+        type: string
+        description: "JSON string or other data providing context for the task"
+    outputs:
+      result:
+        description: "Output or result of the task execution"
+        value: ${{ jobs.execute_task.outputs.task_result }}
+
+jobs:
+  execute_task:
+    runs-on: ubuntu-latest
+    outputs:
+      task_result: ${{ steps.run_task.outputs.result }}
+    steps:
+      - name: Checkout code (optional, if needed)
+        uses: actions/checkout@v4
+
+      - name: Display Task Inputs
+        id: display_inputs
+        run: |
+          echo "Received Task ID: ${{ inputs.task_id }}"
+          echo "Task Description: ${{ inputs.task_description }}"
+          echo "Context Data: ${{ inputs.context_data }}"
+
+      # Placeholder for actual task execution logic
+      # This is where the agent-specific logic would eventually go,
+      # potentially using the inputs to perform actions.
+      - name: Run Task (Placeholder)
+        id: run_task
+        run: |
+          echo "Simulating execution for task ${{ inputs.task_id }}..."
+          # Example: Set an output based on inputs
+          result_value="Task ${{ inputs.task_id }} completed with context: ${{ inputs.context_data }}"
+          echo "result=$result_value" >> "$GITHUB_OUTPUT"
+
+      - name: Report Result
+        run: echo "Task Result: ${{ steps.run_task.outputs.result }}"
+
