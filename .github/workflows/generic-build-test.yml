@@ -1,0 +1,39 @@
+# Placeholder: Generic Build & Test Workflow
+name: Generic Build and Test
+
+on:
+  workflow_call:
+    inputs:
+      # Define inputs needed for build/test
+      environment: 
+        required: true
+        type: string
+
+jobs:
+  build_and_test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # Add steps for setting up environment (e.g., Node.js, Python)
+      # - name: Setup Node
+      #   uses: actions/setup-node@v4
+      #   with:
+      #     node-version: '20'
+
+      # Add steps for installing dependencies
+      # - name: Install dependencies
+      #   run: npm install
+
+      # Add steps for building
+      # - name: Build project
+      #   run: npm run build
+
+      # Add steps for running tests
+      # - name: Run tests
+      #   run: npm test
+
+      - name: Placeholder Step
+        run: echo "Build and test steps would go here for ${{ inputs.environment }}"
+
