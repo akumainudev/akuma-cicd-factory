@@ -24,13 +24,14 @@ on:
 jobs:
   execute_task:
     runs-on: ubuntu-latest
-    # Add permissions block to allow writing content to other repos
+    # Permissions might not be needed when using PAT, but leave for now
     permissions:
       contents: write
     outputs:
       task_result: ${{ steps.report_result.outputs.result }}
     steps:
-      - name: Checkout code (optional, if needed)
+      # Checkout the factory repo itself (optional, if needed for other actions)
+      - name: Checkout Factory Code
         uses: actions/checkout@v4
 
       - name: Display Task Inputs
@@ -47,74 +48,106 @@ jobs:
         id: parse_context
         run: |
           echo "[$(date +%Y-%m-%dT%H:%M:%SZ)] INFO: Parsing context data..."
-          # Use single quotes for shell variable assignment to handle JSON string
           context_json='${{ inputs.context_data }}'
           action=$(echo "$context_json" | jq -r ".action // \"unknown\"")
           echo "action=$action" >> "$GITHUB_OUTPUT"
+          # Also output other params needed by git step
+          echo "repo=$(echo \"$context_json\" | jq -r '.repository')" >> "$GITHUB_OUTPUT"
+          echo "branch=$(echo \"$context_json\" | jq -r '.branch')" >> "$GITHUB_OUTPUT"
+          echo "file_path=$(echo \"$context_json\" | jq -r '.file_path')" >> "$GITHUB_OUTPUT"
+          echo "file_content=$(echo \"$context_json\" | jq -r '.file_content')" >> "$GITHUB_OUTPUT"
+          echo "commit_message=$(echo \"$context_json\" | jq -r '.commit_message')" >> "$GITHUB_OUTPUT"
           echo "[$(date +%Y-%m-%dT%H:%M:%SZ)] INFO: Detected action: $action"
 
-      # --- Action: create_file --- 
+      # --- Action: create_file (Git-based) --- 
       - name: Execute Action - create_file
         id: run_create_file
-        # Use standard quotes for if condition
         if: steps.parse_context.outputs.action == 'create_file'
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }} # Use built-in token for API calls
+          # Use the PAT for checkout and push - Assuming system substitutes <github_pat>
+          GH_PAT: <github_pat>
         run: |
-          echo "[$(date +%Y-%m-%dT%H:%M:%SZ)] INFO: Executing action: create_file"
-          # Use single quotes for shell variable assignment
-          context_json='${{ inputs.context_data }}'
+          echo "[$(date +%Y-%m-%dT%H:%M:%SZ)] INFO: Executing action: create_file (git-based)"
           
-          # Extract parameters from JSON
-          repo=$(echo "$context_json" | jq -r ".repository")
-          branch=$(echo "$context_json" | jq -r ".branch")
-          file_path=$(echo "$context_json" | jq -r ".file_path")
-          file_content=$(echo "$context_json" | jq -r ".file_content")
-          commit_message=$(echo "$context_json" | jq -r ".commit_message")
+          # Get parameters from previous step's output
+          repo="${{ steps.parse_context.outputs.repo }}"
+          branch="${{ steps.parse_context.outputs.branch }}"
+          file_path="${{ steps.parse_context.outputs.file_path }}"
+          file_content="${{ steps.parse_context.outputs.file_content }}"
+          commit_message="${{ steps.parse_context.outputs.commit_message }}"
           
           echo "[$(date +%Y-%m-%dT%H:%M:%SZ)] INFO: Target Repo: $repo"
           echo "[$(date +%Y-%m-%dT%H:%M:%SZ)] INFO: Target Branch: $branch"
           echo "[$(date +%Y-%m-%dT%H:%M:%SZ)] INFO: Target Path: $file_path"
           echo "[$(date +%Y-%m-%dT%H:%M:%SZ)] INFO: Commit Message: $commit_message"
           
-          # Encode content for API
-          encoded_content=$(echo -n "$file_content" | base64 -w 0)
-          
-          # Use gh api to create/update the file
-          echo "[$(date +%Y-%m-%dT%H:%M:%SZ)] INFO: Calling GitHub API to create/update file..."
-          # Get current SHA if file exists (for updating)
-          existing_sha=$(gh api /repos/$repo/contents/$file_path --jq ".sha" --silent || echo "")
-          sha_param=""
-          if [ -n "$existing_sha" ]; then
-            echo "[$(date +%Y-%m-%dT%H:%M:%SZ)] INFO: File exists, providing SHA for update: $existing_sha"
-            # Correctly quote the sha parameter for the shell command
-            sha_param="-f sha=\"$existing_sha\""
+          # Clone the target repository in a temporary directory
+          echo "[$(date +%Y-%m-%dT%H:%M:%SZ)] INFO: Cloning target repository $repo..."
+          git clone "https://x-access-token:${GH_PAT}@github.com/$repo.git" target_repo
+          if [ $? -ne 0 ]; then
+            echo "[$(date +%Y-%m-%dT%H:%M:%SZ)] ERROR: Failed to clone repository $repo."
+            echo "result=Failed to clone repository $repo." >> "$GITHUB_OUTPUT"
+            exit 1
           fi
-          
-          # Ensure the sha_param is expanded correctly in the gh api call
-          api_response=$(gh api --method PUT /repos/$repo/contents/$file_path \
-            -f message="$commit_message" \
-            -f content="$encoded_content" \
-            -f branch="$branch" \
-            ${sha_param} \
-            --silent)
-          
-          # Check API response (basic check for commit sha)
-          commit_sha=$(echo "$api_response" | jq -r ".commit.sha // \"\"")
-          if [ -n "$commit_sha" ]; then
-            echo "[$(date +%Y-%m-%dT%H:%M:%SZ)] SUCCESS: File created/updated successfully. Commit SHA: $commit_sha"
-            echo "result=File $file_path created/updated in $repo ($branch). Commit: $commit_sha" >> "$GITHUB_OUTPUT"
+          cd target_repo
+
+          # Checkout the target branch
+          echo "[$(date +%Y-%m-%dT%H:%M:%SZ)] INFO: Checking out branch $branch..."
+          git checkout "$branch"
+          if [ $? -ne 0 ]; then
+            echo "[$(date +%Y-%m-%dT%H:%M:%SZ)] ERROR: Failed to checkout branch $branch in $repo."
+            echo "result=Failed to checkout branch $branch in $repo." >> "$GITHUB_OUTPUT"
+            cd ..
+            rm -rf target_repo
+            exit 1
+          fi
+
+          # Create/overwrite the file
+          echo "[$(date +%Y-%m-%dT%H:%M:%SZ)] INFO: Creating/updating file $file_path..."
+          # Ensure directory exists if path includes directories
+          mkdir -p "$(dirname "$file_path")"
+          echo "$file_content" > "$file_path"
+
+          # Debug logging (as requested by GPT)
+          echo "[$(date +%Y-%m-%dT%H:%M:%SZ)] DEBUG: PATH: $file_path"
+          echo "[$(date +%Y-%m-%dT%H:%M:%SZ)] DEBUG: CONTENT:"
+          cat "$file_path"
+
+          # Configure git user
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          # Add, commit, and push
+          git add "$file_path"
+          # Check if there are changes to commit
+          if git diff --staged --quiet; then
+            echo "[$(date +%Y-%m-%dT%H:%M:%SZ)] INFO: No changes detected in $file_path. Skipping commit and push."
+            echo "result=No changes detected in file $file_path in $repo ($branch)." >> "$GITHUB_OUTPUT"
           else
-            echo "[$(date +%Y-%m-%dT%H:%M:%SZ)] ERROR: Failed to create/update file via API."
-            echo "API Response: $api_response"
-            echo "result=Failed to create/update file $file_path in $repo ($branch)." >> "$GITHUB_OUTPUT"
-            exit 1 # Fail the step
+            echo "[$(date +%Y-%m-%dT%H:%M:%SZ)] INFO: Committing and pushing changes..."
+            git commit -m "$commit_message"
+            # Push using the PAT in the URL
+            push_output=$(git push "https://x-access-token:${GH_PAT}@github.com/$repo.git" "$branch" 2>&1)
+            push_exit_code=$?
+
+            if [ $push_exit_code -eq 0 ]; then
+              commit_sha=$(git rev-parse HEAD)
+              echo "[$(date +%Y-%m-%dT%H:%M:%SZ)] SUCCESS: File created/updated and pushed successfully. Commit SHA: $commit_sha"
+              echo "result=File $file_path created/updated in $repo ($branch). Commit: $commit_sha" >> "$GITHUB_OUTPUT"
+            else
+              echo "[$(date +%Y-%m-%dT%H:%M:%SZ)] ERROR: Failed to push changes."
+              echo "Push Output: $push_output"
+              echo "result=Failed to push file $file_path to $repo ($branch)." >> "$GITHUB_OUTPUT"
+              exit 1 # Fail the step
+            fi
           fi
+          # Clean up the cloned repo directory
+          cd ..
+          rm -rf target_repo
 
       # --- Action: unknown --- 
       - name: Handle Unknown Action
         id: run_unknown
-        # Use standard quotes for if condition
         if: steps.parse_context.outputs.action == 'unknown'
         run: |
           echo "[$(date +%Y-%m-%dT%H:%M:%SZ)] WARN: Unknown or missing action in context data."
@@ -131,7 +164,6 @@ jobs:
           elif [ "$action" == "unknown" ]; then
             final_result="${{ steps.run_unknown.outputs.result }}"
           else
-             # Use standard shell string interpolation
              final_result="Action '$action' completed (no specific result output)."
           fi
           echo "[$(date +%Y-%m-%dT%H:%M:%SZ)] INFO: Final Task Result: $final_result"
