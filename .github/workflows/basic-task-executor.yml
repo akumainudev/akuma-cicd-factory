@@ -26,7 +26,8 @@ jobs:
         run: |
           echo "Task ID: ${{ inputs.task_id }}"
           echo "Task Description: ${{ inputs.task_description }}"
-          echo "Context Data: ${{ inputs.context_data }}"
+          # Removed echo for context_data to avoid bash errors with JSON string
+          echo "Context Data: (See job setup logs for full value)"
 
       - name: Install jq
         run: sudo apt-get update && sudo apt-get install -y jq
@@ -37,12 +38,19 @@ jobs:
           CONTEXT_JSON: ${{ inputs.context_data }}
         run: |
           echo "Parsing context data..."
-          echo "action=$(jq -r .action <<< \"$CONTEXT_JSON\")" >> $GITHUB_OUTPUT
-          echo "repo=$(jq -r .repo <<< \"$CONTEXT_JSON\")" >> $GITHUB_OUTPUT
-          echo "branch=$(jq -r .branch <<< \"$CONTEXT_JSON\")" >> $GITHUB_OUTPUT
-          echo "path=$(jq -r .path <<< \"$CONTEXT_JSON\")" >> $GITHUB_OUTPUT
-          echo "content=$(jq -r .content <<< \"$CONTEXT_JSON\")" >> $GITHUB_OUTPUT
-          echo "message=$(jq -r .message <<< \"$CONTEXT_JSON\")" >> $GITHUB_OUTPUT
+          # Use fromJSON to handle the escaped JSON string from the trigger workflow
+          echo "action=$(echo 
+'$CONTEXT_JSON' | jq -r .action)" >> $GITHUB_OUTPUT
+          echo "repo=$(echo 
+'$CONTEXT_JSON' | jq -r .repo)" >> $GITHUB_OUTPUT
+          echo "branch=$(echo 
+'$CONTEXT_JSON' | jq -r .branch)" >> $GITHUB_OUTPUT
+          echo "path=$(echo 
+'$CONTEXT_JSON' | jq -r .path)" >> $GITHUB_OUTPUT
+          echo "content=$(echo 
+'$CONTEXT_JSON' | jq -r .content)" >> $GITHUB_OUTPUT
+          echo "message=$(echo 
+'$CONTEXT_JSON' | jq -r .message)" >> $GITHUB_OUTPUT
           echo "Parsing complete."
 
       - name: Checkout Target Repository
@@ -61,7 +69,7 @@ jobs:
           echo "File Path: ${{ steps.parse.outputs.path }}"
           echo "Commit Message: ${{ steps.parse.outputs.message }}"
           # Avoid echoing potentially large content directly
-          echo "Content length: $(echo \"${{ steps.parse.outputs.content }}\" | wc -c)"
+          echo "Content length: $(echo "${{ steps.parse.outputs.content }}" | wc -c)"
 
       - name: Execute Action - create_file
         if: steps.parse.outputs.action == 'create_file'
@@ -69,8 +77,8 @@ jobs:
         run: |
           echo "Creating/Updating file: ${{ steps.parse.outputs.path }}"
           # Ensure directory exists if path includes subdirectories
-          mkdir -p "$(dirname \"${{ steps.parse.outputs.path }}\")"
-          echo "${{ steps.parse.outputs.content }}" > \"${{ steps.parse.outputs.path }}\"
+          mkdir -p "$(dirname "${{ steps.parse.outputs.path }}")"
+          echo "${{ steps.parse.outputs.content }}" > "${{ steps.parse.outputs.path }}"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add "${{ steps.parse.outputs.path }}"
