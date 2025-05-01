@@ -48,44 +48,62 @@ jobs:
         id: parse_context
         run: |
           echo "[$(date +%Y-%m-%dT%H:%M:%SZ)] INFO: Parsing context data..."
-          context_json='${{ inputs.context_data }}'
+          context_json=\'${{ inputs.context_data }}\'
           action=$(echo "$context_json" | jq -r ".action // \"unknown\"")
           echo "action=$action" >> "$GITHUB_OUTPUT"
           # Also output other params needed by git step
-          echo "repo=$(echo \"$context_json\" | jq -r '.repository')" >> "$GITHUB_OUTPUT"
-          echo "branch=$(echo \"$context_json\" | jq -r '.branch')" >> "$GITHUB_OUTPUT"
-          echo "file_path=$(echo \"$context_json\" | jq -r '.file_path')" >> "$GITHUB_OUTPUT"
-          echo "file_content=$(echo \"$context_json\" | jq -r '.file_content')" >> "$GITHUB_OUTPUT"
-          echo "commit_message=$(echo \"$context_json\" | jq -r '.commit_message')" >> "$GITHUB_OUTPUT"
+          echo "repo=$(echo \"$context_json\" | jq -r ".repository")" >> "$GITHUB_OUTPUT"
+          echo "branch=$(echo \"$context_json\" | jq -r ".branch")" >> "$GITHUB_OUTPUT"
+          echo "file_path=$(echo \"$context_json\" | jq -r ".file_path")" >> "$GITHUB_OUTPUT"
+          echo "file_content=$(echo \"$context_json\" | jq -r ".file_content")" >> "$GITHUB_OUTPUT"
+          echo "commit_message=$(echo \"$context_json\" | jq -r ".commit_message")" >> "$GITHUB_OUTPUT"
           echo "[$(date +%Y-%m-%dT%H:%M:%SZ)] INFO: Detected action: $action"
 
-      # --- Action: create_file (Git-based) --- 
+      # --- Action: create_file (Git-based with Debugging & PAT Auth) --- 
       - name: Execute Action - create_file
         id: run_create_file
-        if: steps.parse_context.outputs.action == 'create_file'
+        if: steps.parse_context.outputs.action == \'create_file\'
         env:
-          # Use the PAT for checkout and push - Assuming system substitutes <github_pat>
-          GH_PAT: <github_pat>
+          # Use ACTIONS_PAT secret for authentication
+          ACTIONS_PAT: ${{ secrets.ACTIONS_PAT }}
         run: |
-          echo "[$(date +%Y-%m-%dT%H:%M:%SZ)] INFO: Executing action: create_file (git-based)"
+          echo "[$(date +%Y-%m-%dT%H:%M:%SZ)] INFO: Executing action: create_file (git-based with PAT)"
           
-          # Get parameters from previous step's output
+          # Get parameters from previous step\'s output
           repo="${{ steps.parse_context.outputs.repo }}"
           branch="${{ steps.parse_context.outputs.branch }}"
           file_path="${{ steps.parse_context.outputs.file_path }}"
           file_content="${{ steps.parse_context.outputs.file_content }}"
           commit_message="${{ steps.parse_context.outputs.commit_message }}"
           
-          echo "[$(date +%Y-%m-%dT%H:%M:%SZ)] INFO: Target Repo: $repo"
-          echo "[$(date +%Y-%m-%dT%H:%M:%SZ)] INFO: Target Branch: $branch"
-          echo "[$(date +%Y-%m-%dT%H:%M:%SZ)] INFO: Target Path: $file_path"
-          echo "[$(date +%Y-%m-%dT%H:%M:%SZ)] INFO: Commit Message: $commit_message"
+          # Verify variables are set (as requested by GPT)
+          echo "[$(date +%Y-%m-%dT%H:%M:%SZ)] DEBUG: Repo: $repo"
+          echo "[$(date +%Y-%m-%dT%H:%M:%SZ)] DEBUG: Branch: $branch"
+          echo "[$(date +%Y-%m-%dT%H:%M:%SZ)] DEBUG: File Path: $file_path"
+          echo "[$(date +%Y-%m-%dT%H:%M:%SZ)] DEBUG: Commit Message: $commit_message"
+          # Avoid echoing potentially large content directly, check length instead
+          content_length=$(echo -n "$file_content" | wc -c)
+          echo "[$(date +%Y-%m-%dT%H:%M:%SZ)] DEBUG: Content Length: $content_length bytes"
           
-          # Clone the target repository in a temporary directory
-          echo "[$(date +%Y-%m-%dT%H:%M:%SZ)] INFO: Cloning target repository $repo..."
-          git clone "https://x-access-token:${GH_PAT}@github.com/$repo.git" target_repo
+          # Check if essential variables are empty
+          if [ -z "$repo" ] || [ -z "$branch" ] || [ -z "$file_path" ] || [ -z "$commit_message" ]; then
+            echo "[$(date +%Y-%m-%dT%H:%M:%SZ)] ERROR: One or more required parameters (repo, branch, file_path, commit_message) are empty. Check task JSON."
+            echo "result=Failed: Missing required parameters in task JSON." >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+          
+          # Check if PAT is available
+          if [ -z "$ACTIONS_PAT" ]; then
+            echo "[$(date +%Y-%m-%dT%H:%M:%SZ)] ERROR: ACTIONS_PAT secret is not set in the repository settings."
+            echo "result=Failed: ACTIONS_PAT secret is missing." >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+          
+          # Clone the target repository in a temporary directory using ACTIONS_PAT
+          echo "[$(date +%Y-%m-%dT%H:%M:%SZ)] INFO: Cloning target repository $repo using PAT..."
+          git clone "https://x-access-token:${ACTIONS_PAT}@github.com/$repo.git" target_repo
           if [ $? -ne 0 ]; then
-            echo "[$(date +%Y-%m-%dT%H:%M:%SZ)] ERROR: Failed to clone repository $repo."
+            echo "[$(date +%Y-%m-%dT%H:%M:%SZ)] ERROR: Failed to clone repository $repo. Check PAT permissions and repository name."
             echo "result=Failed to clone repository $repo." >> "$GITHUB_OUTPUT"
             exit 1
           fi
@@ -104,11 +122,10 @@ jobs:
 
           # Create/overwrite the file
           echo "[$(date +%Y-%m-%dT%H:%M:%SZ)] INFO: Creating/updating file $file_path..."
-          # Ensure directory exists if path includes directories
           mkdir -p "$(dirname "$file_path")"
           echo "$file_content" > "$file_path"
 
-          # Debug logging (as requested by GPT)
+          # Debug logging (File Content)
           echo "[$(date +%Y-%m-%dT%H:%M:%SZ)] DEBUG: PATH: $file_path"
           echo "[$(date +%Y-%m-%dT%H:%M:%SZ)] DEBUG: CONTENT:"
           cat "$file_path"
@@ -117,17 +134,32 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          # Add, commit, and push
+          # Add file
           git add "$file_path"
+          
           # Check if there are changes to commit
           if git diff --staged --quiet; then
             echo "[$(date +%Y-%m-%dT%H:%M:%SZ)] INFO: No changes detected in $file_path. Skipping commit and push."
             echo "result=No changes detected in file $file_path in $repo ($branch)." >> "$GITHUB_OUTPUT"
           else
-            echo "[$(date +%Y-%m-%dT%H:%M:%SZ)] INFO: Committing and pushing changes..."
+            echo "[$(date +%Y-%m-%dT%H:%M:%SZ)] INFO: Committing changes..."
             git commit -m "$commit_message"
-            # Push using the PAT in the URL
-            push_output=$(git push "https://x-access-token:${GH_PAT}@github.com/$repo.git" "$branch" 2>&1)
+            
+            # Debug logging before push (as requested by GPT)
+            echo "[$(date +%Y-%m-%dT%H:%M:%SZ)] DEBUG: Showing working dir & git status before push..."
+            pwd
+            ls -la
+            git status
+            git remote -v
+            
+            # Manual push test (as requested by GPT)
+            echo "[$(date +%Y-%m-%dT%H:%M:%SZ)] DEBUG: Testing push manually..."
+            # Use the PAT in the URL for the test push as well
+            git push "https://x-access-token:${ACTIONS_PAT}@github.com/$repo.git" "$branch" || echo "[$(date +%Y-%m-%dT%H:%M:%SZ)] DEBUG: Manual push test failed with code $?"
+            
+            # Main push attempt (redundant after test, but keeping for original logic flow)
+            echo "[$(date +%Y-%m-%dT%H:%M:%SZ)] INFO: Pushing changes..."
+            push_output=$(git push "https://x-access-token:${ACTIONS_PAT}@github.com/$repo.git" "$branch" 2>&1)
             push_exit_code=$?
 
             if [ $push_exit_code -eq 0 ]; then
@@ -138,17 +170,26 @@ jobs:
               echo "[$(date +%Y-%m-%dT%H:%M:%SZ)] ERROR: Failed to push changes."
               echo "Push Output: $push_output"
               echo "result=Failed to push file $file_path to $repo ($branch)." >> "$GITHUB_OUTPUT"
-              exit 1 # Fail the step
+              # Do not exit 1 here, let the failure check step handle it
             fi
           fi
           # Clean up the cloned repo directory
           cd ..
           rm -rf target_repo
 
+      # Debug step after push attempt (as requested by GPT)
+      - name: DEBUG: Check logs for push error
+        if: failure() && steps.parse_context.outputs.action == \'create_file\'
+        run: |
+          echo "[$(date +%Y-%m-%dT%H:%M:%SZ)] DEBUG: Git push likely failed. Check PAT permissions (repo scope needed), repository URL, branch name, and potential merge conflicts."
+          # Set a failure result if the create_file step failed
+          echo "result=Failed during create_file step. Check workflow logs for details." >> "$GITHUB_OUTPUT"
+          exit 1 # Ensure the job fails if the push failed
+
       # --- Action: unknown --- 
       - name: Handle Unknown Action
         id: run_unknown
-        if: steps.parse_context.outputs.action == 'unknown'
+        if: steps.parse_context.outputs.action == \'unknown\'
         run: |
           echo "[$(date +%Y-%m-%dT%H:%M:%SZ)] WARN: Unknown or missing action in context data."
           echo "result=Unknown action specified." >> "$GITHUB_OUTPUT"
@@ -156,16 +197,35 @@ jobs:
       # --- Report Final Result --- 
       - name: Report Result
         id: report_result
+        # Always run this step to report the outcome, even if previous steps failed
+        if: always()
         run: |
           action="${{ steps.parse_context.outputs.action }}"
           final_result=""
+          # Check the outcome of the relevant action step
+          create_file_outcome="${{ steps.run_create_file.outcome }}"
+          unknown_outcome="${{ steps.run_unknown.outcome }}"
+          
           if [ "$action" == "create_file" ]; then
-            final_result="${{ steps.run_create_file.outputs.result }}"
+            # If the create_file step succeeded or was skipped (no changes)
+            if [ "$create_file_outcome" == "success" ] || [ "$create_file_outcome" == "skipped" ]; then
+              final_result="${{ steps.run_create_file.outputs.result }}"
+            else # If create_file step failed
+              final_result="Failed during create_file step. Check workflow logs for details."
+            fi
           elif [ "$action" == "unknown" ]; then
-            final_result="${{ steps.run_unknown.outputs.result }}"
+             final_result="${{ steps.run_unknown.outputs.result }}"
           else
-             final_result="Action '$action' completed (no specific result output)."
+             final_result="Action \'$action\' completed or was not applicable (no specific result output)."
           fi
+          
+          # Handle cases where action was invalid or context was missing
+          if [ -z "$final_result" ] && [ "$action" != "unknown" ]; then
+             final_result="Task completed, but action \'$action\' did not produce a specific result output or was skipped."
+          elif [ -z "$final_result" ] && [ "$action" == "unknown" ]; then
+             final_result="Unknown action specified or context data missing."
+          fi
+
           echo "[$(date +%Y-%m-%dT%H:%M:%SZ)] INFO: Final Task Result: $final_result"
           echo "result=$final_result" >> "$GITHUB_OUTPUT"
 
