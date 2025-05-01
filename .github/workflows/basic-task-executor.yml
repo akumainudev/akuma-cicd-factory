@@ -1,4 +1,5 @@
-# Workflow: Basic Task Executor (with Git-based file creation)\nname: Forge Executor
+# Workflow: Basic Task Executor (with Git-based file creation)
+name: Forge Executor
 
 on:
   workflow_call:
@@ -59,7 +60,7 @@ jobs:
           echo "File Path: ${{ steps.parse.outputs.path }}"
           echo "Commit Message: ${{ steps.parse.outputs.message }}"
           # Avoid echoing potentially large content directly
-          echo "Content length: $(echo "${{ steps.parse.outputs.content }}" | wc -c)"
+          echo "Content length: $(echo \"${{ steps.parse.outputs.content }}\" | wc -c)"
 
       - name: Execute Action - create_file
         if: steps.parse.outputs.action == 'create_file'
@@ -67,8 +68,8 @@ jobs:
         run: |
           echo "Creating/Updating file: ${{ steps.parse.outputs.path }}"
           # Ensure directory exists if path includes subdirectories
-          mkdir -p "$(dirname "${{ steps.parse.outputs.path }}")"
-          echo "${{ steps.parse.outputs.content }}" > "${{ steps.parse.outputs.path }}"
+          mkdir -p "$(dirname \"${{ steps.parse.outputs.path }}\")"
+          echo "${{ steps.parse.outputs.content }}" > \"${{ steps.parse.outputs.path }}\"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add "${{ steps.parse.outputs.path }}"
@@ -84,7 +85,7 @@ jobs:
           git commit -m "${{ steps.parse.outputs.message }}" || echo "No changes to commit"
 
           # Push changes using PAT
-# Construct remote URL with PAT
+          # Construct remote URL with PAT
           repo_url="https://x-access-token:${{ secrets.ACTIONS_PAT }}@github.com/${{ steps.parse.outputs.repo }}.git"
           echo "Pushing to branch: ${{ steps.parse.outputs.branch }}"
           git push "$repo_url" HEAD:${{ steps.parse.outputs.branch }} || echo "Push failed with code $?"
