@@ -47,7 +47,8 @@ jobs:
         id: parse_context
         run: |
           echo "[$(date +%Y-%m-%dT%H:%M:%SZ)] INFO: Parsing context data..."
-          context_json=\'${{ inputs.context_data }}\'
+          # Use single quotes for shell variable assignment to handle JSON string
+          context_json='${{ inputs.context_data }}'
           action=$(echo "$context_json" | jq -r ".action // \"unknown\"")
           echo "action=$action" >> "$GITHUB_OUTPUT"
           echo "[$(date +%Y-%m-%dT%H:%M:%SZ)] INFO: Detected action: $action"
@@ -55,12 +56,14 @@ jobs:
       # --- Action: create_file --- 
       - name: Execute Action - create_file
         id: run_create_file
-        if: steps.parse_context.outputs.action == \'create_file\'
+        # Use standard quotes for if condition
+        if: steps.parse_context.outputs.action == 'create_file'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }} # Use built-in token for API calls
         run: |
           echo "[$(date +%Y-%m-%dT%H:%M:%SZ)] INFO: Executing action: create_file"
-          context_json=\'${{ inputs.context_data }}\'
+          # Use single quotes for shell variable assignment
+          context_json='${{ inputs.context_data }}'
           
           # Extract parameters from JSON
           repo=$(echo "$context_json" | jq -r ".repository")
@@ -84,14 +87,16 @@ jobs:
           sha_param=""
           if [ -n "$existing_sha" ]; then
             echo "[$(date +%Y-%m-%dT%H:%M:%SZ)] INFO: File exists, providing SHA for update: $existing_sha"
+            # Correctly quote the sha parameter for the shell command
             sha_param="-f sha=\"$existing_sha\""
           fi
           
+          # Ensure the sha_param is expanded correctly in the gh api call
           api_response=$(gh api --method PUT /repos/$repo/contents/$file_path \
             -f message="$commit_message" \
             -f content="$encoded_content" \
             -f branch="$branch" \
-            $sha_param \
+            ${sha_param} \
             --silent)
           
           # Check API response (basic check for commit sha)
@@ -109,7 +114,8 @@ jobs:
       # --- Action: unknown --- 
       - name: Handle Unknown Action
         id: run_unknown
-        if: steps.parse_context.outputs.action == \'unknown\'
+        # Use standard quotes for if condition
+        if: steps.parse_context.outputs.action == 'unknown'
         run: |
           echo "[$(date +%Y-%m-%dT%H:%M:%SZ)] WARN: Unknown or missing action in context data."
           echo "result=Unknown action specified." >> "$GITHUB_OUTPUT"
@@ -125,7 +131,8 @@ jobs:
           elif [ "$action" == "unknown" ]; then
             final_result="${{ steps.run_unknown.outputs.result }}"
           else
-             final_result="Action ".concat(\'$action\', " completed (no specific result output).")
+             # Use standard shell string interpolation
+             final_result="Action '$action' completed (no specific result output)."
           fi
           echo "[$(date +%Y-%m-%dT%H:%M:%SZ)] INFO: Final Task Result: $final_result"
           echo "result=$final_result" >> "$GITHUB_OUTPUT"
