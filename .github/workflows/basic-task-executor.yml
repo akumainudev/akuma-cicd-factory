@@ -93,13 +93,29 @@ jobs:
           # Commit changes
           git commit -m "${{ steps.parse.outputs.message }}" || echo "No changes to commit"
 
-          # Push changes using PAT
-          # Construct remote URL with PAT
+          # Push changes using PAT with enhanced error checking
           repo_url="https://x-access-token:${{ secrets.ACTIONS_PAT }}@github.com/${{ steps.parse.outputs.repo }}.git"
           echo "Pushing to branch: ${{ steps.parse.outputs.branch }}"
-          git push "$repo_url" HEAD:${{ steps.parse.outputs.branch }} || echo "Push failed with code $?"
+          
+          # Attempt push and capture exit code
+          git push "$repo_url" HEAD:${{ steps.parse.outputs.branch }}
+          push_exit_code=$?
+          
+          # Check exit code and provide detailed error message if failed
+          if [ $push_exit_code -ne 0 ]; then
+            echo "::error::Git push failed with exit code $push_exit_code."
+            echo "Potential causes:"
+            echo "1. PAT Permissions: Ensure the ACTIONS_PAT has 'contents: write' permission for the target repository ('${{ steps.parse.outputs.repo }}')."
+            echo "2. Branch Protection: Check if branch protection rules on '${{ steps.parse.outputs.branch }}' prevent direct pushes."
+            echo "3. Repository URL: Verify the repository URL is correct: $repo_url"
+            echo "4. PAT Validity: Ensure the ACTIONS_PAT is still valid and not expired/revoked."
+            exit $push_exit_code # Exit with the push error code
+          else
+            echo "Git push successful."
+          fi
 
-      - name: "DEBUG: Check logs for push error"
+      # This step is now less necessary due to the inline error check, but kept for redundancy
+      - name: "DEBUG: Check logs for push error (Redundant)"
         if: failure() && steps.parse.outputs.action == 'create_file'
         run: echo "Git push likely failed. Check permissions, PAT validity, or repo URL."
 
