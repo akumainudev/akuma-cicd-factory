@@ -50,7 +50,7 @@ jobs:
           token: ${{ secrets.ACTIONS_PAT }} # Use PAT for checkout
           path: target_repo # Checkout to a specific subdirectory
 
-      - name: DEBUG: Show Parsed Variables
+      - name: "DEBUG: Show Parsed Variables" # Quoted name
         run: |
           echo "Action: ${{ steps.parse.outputs.action }}"
           echo "Repo: ${{ steps.parse.outputs.repo }}"
@@ -61,7 +61,8 @@ jobs:
           echo "Content length: $(echo '${{ steps.parse.outputs.content }}' | wc -c)"
 
       - name: Execute Action - create_file
-        if: steps.parse.outputs.action == 'create_file'\n        working-directory: ./target_repo # Change to the checked-out repo directory
+        if: steps.parse.outputs.action == 'create_file'
+        working-directory: ./target_repo # Change to the checked-out repo directory
         run: |
           echo "Creating/Updating file: ${{ steps.parse.outputs.path }}"
           # Ensure directory exists if path includes subdirectories
@@ -87,5 +88,6 @@ jobs:
           echo "Pushing to branch: ${{ steps.parse.outputs.branch }}"
           git push "$repo_url" HEAD:{${{ steps.parse.outputs.branch }} || echo "Push failed with code $?"
           
-      - name: DEBUG: Check logs for push error
-        if: failure() && steps.parse.outputs.action == 'create_file'\n        run: echo "Git push likely failed. Check permissions, PAT validity, or repo URL."
+      - name: "DEBUG: Check logs for push error" # Quoted name
+        if: failure() && steps.parse.outputs.action == 'create_file'
+        run: echo "Git push likely failed. Check permissions, PAT validity, or repo URL."
