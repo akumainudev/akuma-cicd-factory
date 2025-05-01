@@ -1,5 +1,4 @@
-# Workflow: Basic Task Executor (with Git-based file creation)
-name: Forge Executor
+# Workflow: Basic Task Executor (with Git-based file creation)\nname: Forge Executor
 
 on:
   workflow_call:
@@ -33,15 +32,17 @@ jobs:
 
       - name: Parse Context Data
         id: parse
+        env:
+          CONTEXT_JSON: ${{ inputs.context_data }}
         run: |
-          context_json=\'{${{ inputs.context_data }}|'
-          echo "action=$(echo $context_json | jq -r .action)" >> $GITHUB_OUTPUT
-          echo "repo=$(echo $context_json | jq -r .repo)" >> $GITHUB_OUTPUT
-          echo "branch=$(echo $context_json | jq -r .branch)" >> $GITHUB_OUTPUT
-          echo "path=$(echo $context_json | jq -r .path)" >> $GITHUB_OUTPUT
-          echo "content=$(echo $context_json | jq -r .content)" >> $GITHUB_OUTPUT  # Content maintains newlines
-          echo "message=$(echo $context_json | jq -r .message)" >> $GITHUB_OUTPUT
-
+          echo "Parsing context data..."
+          echo "action=$(echo \"$CONTEXT_JSON\" | jq -r .action)" >> $GITHUB_OUTPUT
+          echo "repo=$(echo \"$CONTEXT_JSON\" | jq -r .repo)" >> $GITHUB_OUTPUT
+          echo "branch=$(echo \"$CONTEXT_JSON\" | jq -r .branch)" >> $GITHUB_OUTPUT
+          echo "path=$(echo \"$CONTEXT_JSON\" | jq -r .path)" >> $GITHUB_OUTPUT
+          echo "content=$(echo \"$CONTEXT_JSON\" | jq -r .content)" >> $GITHUB_OUTPUT
+          echo "message=$(echo \"$CONTEXT_JSON\" | jq -r .message)" >> $GITHUB_OUTPUT
+          echo "Parsing complete."
       - name: Checkout Target Repository
         uses: actions/checkout@v4
         with:
@@ -50,7 +51,7 @@ jobs:
           token: ${{ secrets.ACTIONS_PAT }} # Use PAT for checkout
           path: target_repo # Checkout to a specific subdirectory
 
-      - name: "DEBUG: Show Parsed Variables" # Quoted name
+      - name: "DEBUG: Show Parsed Variables"
         run: |
           echo "Action: ${{ steps.parse.outputs.action }}"
           echo "Repo: ${{ steps.parse.outputs.repo }}"
@@ -58,7 +59,7 @@ jobs:
           echo "File Path: ${{ steps.parse.outputs.path }}"
           echo "Commit Message: ${{ steps.parse.outputs.message }}"
           # Avoid echoing potentially large content directly
-          echo "Content length: $(echo '${{ steps.parse.outputs.content }}' | wc -c)"
+          echo "Content length: $(echo "${{ steps.parse.outputs.content }}" | wc -c)"
 
       - name: Execute Action - create_file
         if: steps.parse.outputs.action == 'create_file'
@@ -66,28 +67,29 @@ jobs:
         run: |
           echo "Creating/Updating file: ${{ steps.parse.outputs.path }}"
           # Ensure directory exists if path includes subdirectories
-          mkdir -p "$(dirname \"${{ steps.parse.outputs.path }}\")"
-          echo '${{ steps.parse.outputs.content }}' > "${{ steps.parse.outputs.path }}"
+          mkdir -p "$(dirname "${{ steps.parse.outputs.path }}")"
+          echo "${{ steps.parse.outputs.content }}" > "${{ steps.parse.outputs.path }}"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add "$e{ steps.parse.outputs.path }}"
-          
+          git add "${{ steps.parse.outputs.path }}"
+
           # Debugging steps before commit/push
           echo "--- DEBUG: Git Status Before Commit ---"
           git status
           echo "--- DEBUG: File Content --- "
           cat "${{ steps.parse.outputs.path }}"
           echo "--- END DEBUG --- "
-          
+
           # Commit changes
           git commit -m "${{ steps.parse.outputs.message }}" || echo "No changes to commit"
-          
-          # Push changes using PAD
-          # Construct remote URL with PAT
-          repo_url="https://x-access-token:${{ secrets.ACTIONS_PAT   }}@github.com/${{ steps.parse.outputs.repo }}.git"
+
+          # Push changes using PAT
+# Construct remote URL with PAT
+          repo_url="https://x-access-token:${{ secrets.ACTIONS_PAT }}@github.com/${{ steps.parse.outputs.repo }}.git"
           echo "Pushing to branch: ${{ steps.parse.outputs.branch }}"
-          git push "$repo_url" HEAD:{${{ steps.parse.outputs.branch }} || echo "Push failed with code $?"
-          
-      - name: "DEBUG: Check logs for push error" # Quoted name
+          git push "$repo_url" HEAD:${{ steps.parse.outputs.branch }} || echo "Push failed with code $?"
+
+      - name: "DEBUG: Check logs for push error"
         if: failure() && steps.parse.outputs.action == 'create_file'
         run: echo "Git push likely failed. Check permissions, PAT validity, or repo URL."
+
