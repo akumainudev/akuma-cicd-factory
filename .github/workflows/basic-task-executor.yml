@@ -1,10 +1,9 @@
----
+# Workflow: Basic Task Executor (with Git-based file creation)
 name: Forge Executor
 
 on:
   workflow_call:
     inputs:
-      # Adjusted inputs based on task-trigger.yml
       task_id:
         required: true
         type: string
@@ -12,8 +11,12 @@ on:
         required: false
         type: string
       context_data:
-        required: false
+        required: true # Context data is required for actions
         type: string
+    # Define secrets required by this reusable workflow
+    secrets:
+      ACTIONS_PAT:
+        required: true # PAT is required for git operations
 
 jobs:
   run-task:
@@ -24,3 +27,65 @@ jobs:
           echo "Task ID: ${{ inputs.task_id }}"
           echo "Task Description: ${{ inputs.task_description }}"
           echo "Context Data: ${{ inputs.context_data }}"
+
+      - name: Install jq
+        run: sudo apt-get update && sudo apt-get install -y jq
+
+      - name: Parse Context Data
+        id: parse
+        run: |
+          context_json=\'{${{ inputs.context_data }}|'
+          echo "action=$(echo $context_json | jq -r .action)" >> $GITHUB_OUTPUT
+          echo "repo=$(echo $context_json | jq -r .repo)" >> $GITHUB_OUTPUT
+          echo "branch=$(echo $context_json | jq -r .branch)" >> $GITHUB_OUTPUT
+          echo "path=$(echo $context_json | jq -r .path)" >> $GITHUB_OUTPUT
+          echo "content=$(echo $context_json | jq -r .content)" >> $GITHUB_OUTPUT  # Content maintains newlines
+          echo "message=$(echo $context_json | jq -r .message)" >> $GITHUB_OUTPUT
+
+      - name: Checkout Target Repository
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ steps.parse.outputs.repo }}
+          ref: ${{ steps.parse.outputs.branch }}
+          token: ${{ secrets.ACTIONS_PAT }} # Use PAT for checkout
+          path: target_repo # Checkout to a specific subdirectory
+
+      - name: DEBUG: Show Parsed Variables
+        run: |
+          echo "Action: ${{ steps.parse.outputs.action }}"
+          echo "Repo: ${{ steps.parse.outputs.repo }}"
+          echo "Branch: ${{ steps.parse.outputs.branch }}"
+          echo "File Path: ${{ steps.parse.outputs.path }}"
+          echo "Commit Message: ${{ steps.parse.outputs.message }}"
+          # Avoid echoing potentially large content directly
+          echo "Content length: $(echo '${{ steps.parse.outputs.content }}' | wc -c)"
+
+      - name: Execute Action - create_file
+        if: steps.parse.outputs.action == 'create_file'\n        working-directory: ./target_repo # Change to the checked-out repo directory
+        run: |
+          echo "Creating/Updating file: ${{ steps.parse.outputs.path }}"
+          # Ensure directory exists if path includes subdirectories
+          mkdir -p "$(dirname \"${{ steps.parse.outputs.path }}\")"
+          echo '${{ steps.parse.outputs.content }}' > "${{ steps.parse.outputs.path }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "$e{ steps.parse.outputs.path }}"
+          
+          # Debugging steps before commit/push
+          echo "--- DEBUG: Git Status Before Commit ---"
+          git status
+          echo "--- DEBUG: File Content --- "
+          cat "${{ steps.parse.outputs.path }}"
+          echo "--- END DEBUG --- "
+          
+          # Commit changes
+          git commit -m "${{ steps.parse.outputs.message }}" || echo "No changes to commit"
+          
+          # Push changes using PAD
+          # Construct remote URL with PAT
+          repo_url="https://x-access-token:${{ secrets.ACTIONS_PAT   }}@github.com/${{ steps.parse.outputs.repo }}.git"
+          echo "Pushing to branch: ${{ steps.parse.outputs.branch }}"
+          git push "$repo_url" HEAD:{${{ steps.parse.outputs.branch }} || echo "Push failed with code $?"
+          
+      - name: DEBUG: Check logs for push error
+        if: failure() && steps.parse.outputs.action == 'create_file'\n        run: echo "Git push likely failed. Check permissions, PAT validity, or repo URL."
