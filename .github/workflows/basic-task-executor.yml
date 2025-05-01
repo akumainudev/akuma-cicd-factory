@@ -37,13 +37,14 @@ jobs:
           CONTEXT_JSON: ${{ inputs.context_data }}
         run: |
           echo "Parsing context data..."
-          echo "action=$(echo \"$CONTEXT_JSON\" | jq -r .action)" >> $GITHUB_OUTPUT
-          echo "repo=$(echo \"$CONTEXT_JSON\" | jq -r .repo)" >> $GITHUB_OUTPUT
-          echo "branch=$(echo \"$CONTEXT_JSON\" | jq -r .branch)" >> $GITHUB_OUTPUT
-          echo "path=$(echo \"$CONTEXT_JSON\" | jq -r .path)" >> $GITHUB_OUTPUT
-          echo "content=$(echo \"$CONTEXT_JSON\" | jq -r .content)" >> $GITHUB_OUTPUT
-          echo "message=$(echo \"$CONTEXT_JSON\" | jq -r .message)" >> $GITHUB_OUTPUT
+          echo "action=$(jq -r .action <<< \"$CONTEXT_JSON\")" >> $GITHUB_OUTPUT
+          echo "repo=$(jq -r .repo <<< \"$CONTEXT_JSON\")" >> $GITHUB_OUTPUT
+          echo "branch=$(jq -r .branch <<< \"$CONTEXT_JSON\")" >> $GITHUB_OUTPUT
+          echo "path=$(jq -r .path <<< \"$CONTEXT_JSON\")" >> $GITHUB_OUTPUT
+          echo "content=$(jq -r .content <<< \"$CONTEXT_JSON\")" >> $GITHUB_OUTPUT
+          echo "message=$(jq -r .message <<< \"$CONTEXT_JSON\")" >> $GITHUB_OUTPUT
           echo "Parsing complete."
+
       - name: Checkout Target Repository
         uses: actions/checkout@v4
         with:
